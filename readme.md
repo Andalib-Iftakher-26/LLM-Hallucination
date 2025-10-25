@@ -40,14 +40,8 @@
 | **📁 experiments/**                                                                           | Reproducible scripts and notebooks for replicating paper results.                  |
 | ├── **run_fixed_budget.py** — runs fixed-sample (N) experiments.                              |                                                                                    |
 | ├── **run_adaptive_budget.py** — runs adaptive-sampling experiments.                          |                                                                                    |
-| └── **analyze_results.ipynb** — Jupyter notebook for analysis and visualization.              |                                                                                    |
-|                                                                                               |                                                                                    |
-| **📁 logs/**                                                                                  | Stores runtime and debugging logs.                                                 |
-|                                                                                               |                                                                                    |
-| **📁 tests/**                                                                                 | Unit and integration tests ensuring correctness and reproducibility.               |
-| ├── **test_dirichlet_entropy.py**                                                             |                                                                                    |
-| ├── **test_truncated_sampling.py**                                                            |                                                                                    |
-| └── **test_end_to_end.py**                                                                    |                                                                                    |
+| └── **analyze_results.ipynb** — Jupyter notebook for analysis and visualization.              |                           
+                                                                                                                                                                             
 
 
 
