@@ -1,0 +1,11 @@
+# ==========================================
+# Bayesian Estimator Configuration
+# ==========================================
+
+type: "bayesian"
+alpha_prior: 0.5                # Dirichlet α hyperparameter
+num_mc_samples: 500             # Monte Carlo samples for expectation
+var_threshold: 0.01             # γ threshold for adaptive sampling
+use_truncated: true             # Apply sequence-probability constraints
+hierarchical_K: true            # Use belief distribution over number of meanings
+prior_K_file: "configs/prior_K.json"

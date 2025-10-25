@@ -1,0 +1,19 @@
+# ==========================================
+# Model configuration - Mistral
+# ==========================================
+
+model_name: "mistralai/Mistral-7B-Instruct-v0.3"
+provider: "transformers"
+device: "cuda"
+precision: "bf16"
+
+generation:
+  max_new_tokens: 128
+  temperature: 1.0
+  top_p: 0.9
+  do_sample: true
+  num_return_sequences: 10
+
+entailment_model:
+  name: "facebook/bart-large-mnli"
+  threshold: 0.8

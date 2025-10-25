@@ -1,0 +1,13 @@
+# ==========================================
+# Dataset configuration - TriviaQA
+# ==========================================
+
+name: "TriviaQA"
+split: "validation"
+num_prompts: 500
+prompt_file: "data/prompts/triviaqa_prompts.json"
+cache_dir: "data/generations/triviaqa/"
+
+sampling:
+  num_generations_per_prompt: 10
+  max_length: 128

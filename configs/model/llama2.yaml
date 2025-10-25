@@ -1,0 +1,19 @@
+# ==========================================
+# Model configuration - LLaMA 2
+# ==========================================
+
+model_name: "meta-llama/Llama-2-7b-chat-hf"
+provider: "transformers"
+device: "cuda"
+precision: "fp16"
+
+generation:
+  max_new_tokens: 128
+  temperature: 1.0
+  top_p: 0.9
+  do_sample: true
+  num_return_sequences: 10
+
+entailment_model:
+  name: "microsoft/deberta-large-mnli"
+  threshold: 0.8

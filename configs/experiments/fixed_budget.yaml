@@ -1,0 +1,12 @@
+# ==========================================
+# Fixed-Budget Experiment Configuration
+# ==========================================
+
+description: "Fixed N per prompt experiments across datasets"
+
+datasets: ["triviaqa", "squad", "svamp"]
+models: ["llama2", "mistral"]
+estimators: ["bayes_default", "histogram", "rescaled"]
+
+sample_sizes: [1, 2, 5, 10]
+output_dir: "data/results/fixed_budget/"

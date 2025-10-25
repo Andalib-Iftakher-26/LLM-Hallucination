@@ -1,0 +1,20 @@
+# ===============================
+# Global default configuration
+# ===============================
+
+seed: 42
+device: "cuda"          # or "cpu"
+precision: "fp16"
+
+logging:
+  save_dir: "logs/"
+  level: "INFO"
+
+output:
+  results_dir: "data/results/"
+  figures_dir: "data/figures/"
+
+sampling:
+  max_samples_per_prompt: 100
+  temperature_generation: 1.0
+  temperature_eval: 0.1

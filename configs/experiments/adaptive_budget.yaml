@@ -1,0 +1,14 @@
+# ==========================================
+# Adaptive Sampling Experiment Configuration
+# ==========================================
+
+description: "Adaptive Bayesian sampling experiment"
+
+datasets: ["triviaqa", "squad"]
+models: ["llama2", "mistral"]
+estimator: "bayes_default"
+
+adaptive: true
+var_threshold: 0.01
+max_samples: 20
+output_dir: "data/results/adaptive_budget/"
