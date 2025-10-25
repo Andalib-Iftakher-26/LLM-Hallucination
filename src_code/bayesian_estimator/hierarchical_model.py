@@ -2,7 +2,7 @@
 import json
 from typing import List, Tuple, Sequence, Dict
 import numpy as np
-from .dirichlet_entropy import expected_entropy_dirichlet
+from .dirichlet import expected_entropy_dirichlet
 from .truncated_dirichlet import estimate_E_and_Var_under_constraints
 
 def load_prior_K(path: str) -> Dict:

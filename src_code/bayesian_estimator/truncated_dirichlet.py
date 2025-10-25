@@ -58,7 +58,7 @@ def estimate_E_and_Var_under_constraints(alpha: Sequence[float],
         if not satisfies.any():
             # No sample satisfies constraints; return a conservative fallback by returning
             # entropy for non-truncated Dirichlet prior (this is plausible when constraints impossible).
-            from .dirichlet_entropy import expected_entropy_dirichlet
+            from .dirichlet import expected_entropy_dirichlet
             Eh = expected_entropy_dirichlet(alpha)
             return float(Eh), float(0.0)
 
