@@ -11,20 +11,7 @@ This repository explores **hallucination detection and mitigation** in Large Lan
 LLM-HALLUCINATION/
 ├── .vscode/
 │   └── settings.json
-├── configs/
-│   ├── dataset/
-│   │   └── triviaqa.yaml
-│   ├── estimator/
-│   │   ├── bayes_default.yaml
-│   │   ├── histogram.yaml
-│   │   └── rescaled.yaml
-│   ├── experiments/
-│   │   ├── adaptive_budget.yaml
-│   │   └── fixed_budget.yaml
-│   └── model/
-│       ├── base_config.yaml
-│       ├── llama2.yaml
-│       └── mistral.yaml
+|
 ├── data/
 │   ├── generations/
 │   ├── meanings/
