@@ -1,116 +1,106 @@
 import numpy as np
 import warnings
+import json
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.preprocessing import normalize
 import gensim.downloader as api
 
-# --- This is the setup part, you would run this once ---
-SIMILARITY_THRESHOLD = 0.85
-# It's recommended to load the model only once as it can be time-consuming
-word_vectors = api.load("word2vec-google-news-300")
-VECTOR_DIM = 300
 
-# This list will store our cluster state.
-live_clusters = []
-next_cluster_id = 0
+
+
+SIMILARITY_THRESHOLD = 0.85 
+VECTOR_DIM = 300 # Vector dimension for the chosen model
+
+
+word_vectors = api.load("glove-wiki-gigaword-100")
+print("Model loaded successfully.")
+
+
+
 
 def vectorize_sentence(sentence, model):
-    """Converts a sentence into a single, normalized vector."""
     words = sentence.lower().split()
     word_vecs = [model[word] for word in words if word in model.key_to_index]
+    
     
     if not word_vecs:
         return np.zeros(VECTOR_DIM)
     
+    # Calculate the mean of the word vectors
     sentence_vec = np.mean(word_vecs, axis=0)
     
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", category=RuntimeWarning)
-        sentence_vec = np.nan_to_num(sentence_vec)
+    # Handle potential NaN values and ensure the vector is normalized (has a length of 1)
+    sentence_vec = np.nan_to_num(sentence_vec)
         
     return normalize(sentence_vec.reshape(1, -1))[0]
 
 
-def process_new_response(response_text):
-    global next_cluster_id 
 
-    new_vector = vectorize_sentence(response_text, word_vectors)
 
-    if np.all(new_vector == 0):
-        print(f"  -> Skipping response (could not vectorize): '{response_text}'")
-        return
+def cluster_responses(list_of_responses, model, threshold):
+    response_vectors = [vectorize_sentence(resp, model) for resp in list_of_responses]
 
-    if not live_clusters:
-        print(f"  -> Creating new cluster 0 with: '{response_text}'")
-        live_clusters.append({
-            "id": next_cluster_id,
-            "members": [response_text],
-            "vectors": [new_vector],
-            "centroid": new_vector
-        })
-        next_cluster_id += 1
-        return
-
-    centroids = [cluster["centroid"] for cluster in live_clusters]
-    # Ensure new_vector is correctly shaped for cosine_similarity
-    similarities = cosine_similarity(new_vector.reshape(1, -1), np.array(centroids))[0]
+    cluster_ids = [-1] * len(list_of_responses)
+    next_cluster_id = 0
     
-    max_similarity = np.max(similarities)
-    best_cluster_index = np.argmax(similarities)
+    for i in range(len(list_of_responses)):
+        # If this response has not been assigned to a cluster 
+        if cluster_ids[i] == -1:
+            # start a new cluster.
+            cluster_ids[i] = next_cluster_id
+            
+            #find all other un-clustered responses
+            for j in range(i + 1, len(list_of_responses)):
+                if cluster_ids[j] == -1:
+                    vec_i = response_vectors[i].reshape(1, -1)
+                    vec_j = response_vectors[j].reshape(1, -1)
+                    
+                    similarity = cosine_similarity(vec_i, vec_j)[0][0]
+                    
+                    if similarity > threshold:
+                        # If  similar, assign the other response to the same cluster
+                        cluster_ids[j] = next_cluster_id
+            
+            # Move to the next cluster ID
+            next_cluster_id += 1
+            
+    return cluster_ids
+
+
+
+
+if __name__ == "__main__":
+    all_prompt_data = {}
     
-    if max_similarity >= SIMILARITY_THRESHOLD:
-        cluster = live_clusters[best_cluster_index]
-        cluster["members"].append(response_text)
-        cluster["vectors"].append(new_vector)
+    final_output = {}
+
+    print("\n--- Starting Clustering Process ---")
+    for prompt_key, responses in all_prompt_data.items():
+        print(f"\nClustering responses for '{prompt_key}':")
         
-        cluster["centroid"] = np.mean(cluster["vectors"], axis=0)
         
-        print(f"  -> Adding to cluster {cluster['id']} (sim: {max_similarity:.2f}): '{response_text}'")
-    else:
-        print(f"  -> Creating new cluster {next_cluster_id} (sim: {max_similarity:.2f}): '{response_text}'")
-        live_clusters.append({
-            "id": next_cluster_id,
-            "members": [response_text],
-            "vectors": [new_vector],
-            "centroid": new_vector
-        })
-        next_cluster_id += 1
+        assigned_ids = cluster_responses(responses, word_vectors, SIMILARITY_THRESHOLD)
+        
+        # Format the results for this prompt
+        prompt_clusters = {}
+        for i, response_text in enumerate(responses):
+            cluster_id = assigned_ids[i]
+            if cluster_id not in prompt_clusters:
+                prompt_clusters[cluster_id] = {
+                    "meaning_id": cluster_id,
+                    "members": []
+                }
+            prompt_clusters[cluster_id]["members"].append(response_text)
+            print(f"  -> Assigning to cluster {cluster_id}: '{response_text}'")
+        
+        # Store the formatted clusters
+        final_output[prompt_key] = list(prompt_clusters.values())
 
+    # --- 5. FINAL OUTPUT: Save clusters to a JSON file ---
+    
+    output_filename = "word2vec_clusters.json"
+    with open(output_filename, 'w') as f:
+        json.dump(final_output, f, indent=2)
 
-
-generated_responses = [
-    {"text": "The capital of France is Paris."},
-    {"text": "Paris is the capital city of France."},
-    {"text": "The largest planet in our solar system is Jupiter."},
-]
-
-print("Processing initial responses...")
-for response in generated_responses:
-    process_new_response(response["text"])
-
-print("\n--- Simulating new responses from a model ---\n")
-
-# Now, a new response comes from your LLM
-new_response_from_model_1 = "France's capital is the city of Paris."
-process_new_response(new_response_from_model_1)
-
-# Another new response
-new_response_from_model_2 = "Jupiter is the biggest planet of all."
-process_new_response(new_response_from_model_2)
-
-# A completely different response
-new_response_from_model_3 = "The sky is blue."
-process_new_response(new_response_from_model_3)
-
-
-# --- Final Output ---
-print("\n--- Final Clusters ---")
-final_clusters_list = []
-for cluster in live_clusters:
-    final_clusters_list.append({
-        "meaning_id": cluster["id"],
-        "members": cluster["members"]
-    })
-
-import json
-print(json.dumps(final_clusters_list, indent=2))
+    print(f"\n--- Final Clusters saved to '{output_filename}' ---")
+    print(json.dumps(final_output, indent=2))
