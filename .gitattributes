@@ -1,7 +1,0 @@
-*.csv filter=lfs diff=lfs merge=lfs -text
-dev-v2.0.json filter=lfs diff=lfs merge=lfs -text
-train-v2.0.json filter=lfs diff=lfs merge=lfs -text
-unfiltered-web-dev.json filter=lfs diff=lfs merge=lfs -text
-unfiltered-web-unfiltered-web-test-without-answers.json filter=lfs diff=lfs merge=lfs -text
-unfiltered-web-test-without-answers.json filter=lfs diff=lfs merge=lfs -text
-src_code/models/** filter=lfs diff=lfs merge=lfs -text

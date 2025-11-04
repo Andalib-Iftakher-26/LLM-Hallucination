@@ -1,5 +1,0 @@
-conda create -n phi2 python=3.11 -y
-conda activate phi2
-pip install --upgrade pip setuptools wheel
-pip install llama-cpp-python[cuda]
-
