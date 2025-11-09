@@ -1,10 +1,10 @@
 import numpy as np
 import json
-from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.preprocessing import normalize
 import gensim.downloader as api
 from Load_model_output import create_cleaned_dataset, path1, path2, path3, path4, path5, path6, path7, path8, path9, path10, path11, path12, path13
 import os
+from gensim.models import KeyedVectors
 
 SIMILARITY_THRESHOLD = 0.85
 VECTOR_DIM = 300
@@ -15,24 +15,53 @@ print("Model loaded successfully.")
 def vectorize_sentence(sentence, model):
     words = sentence.lower().split()
     
-    
     word_vecs = []
     for word in words:
         if word in model.key_to_index:
             word_vecs.append(model[word])
         
     
-
     if word_vecs == []:
         return np.zeros(VECTOR_DIM)
     
     sentence_vec = np.mean(word_vecs, axis=0)
     sentence_vec = np.nan_to_num(sentence_vec)
     
-    if np.linalg.norm(sentence_vec) == 0:
-        return np.zeros(VECTOR_DIM)
     
     return normalize(sentence_vec.reshape(1, -1))[0]
+
+
+
+
+
+
+######################## FOR CHECKING SIMILARITY ###########################
+def euclidean_distance(A, B):
+    return np.linalg.norm(A - B)
+
+def cosine_similarity(A, B):
+    return np.dot(A, B) / (np.linalg.norm(A) * np.linalg.norm(B))
+
+def manhattan_distance(A, B):
+    return np.sum(np.abs(A - B))
+
+def jaccard_similarity(A, B):
+    intersection = np.sum(np.minimum(A, B))
+    union = np.sum(np.maximum(A, B))
+    return intersection / union
+
+def dot_product(A, B):
+    return np.dot(A, B)
+
+def pearson_correlation(A, B):
+    return np.corrcoef(A, B)[0, 1]
+
+def rbf_kernel(A, B, gamma=0.1):
+    return np.exp(-gamma * np.linalg.norm(A - B) ** 2)
+
+def dice_coefficient(A, B):
+    intersection = np.sum(np.minimum(A, B))
+    return 2 * intersection / (np.sum(A) + np.sum(B))
 
 
 
@@ -53,8 +82,8 @@ def cluster_responses(list_of_responses, model, threshold):
         placed = False
         for j in list(cluster.keys()):
             rep_idx = next(iter(cluster[j].keys()))
-            rep_vec = response_vectors[rep_idx].reshape(1, -1)
-            sim = cosine_similarity(vec.reshape(1, -1), rep_vec)[0][0]
+            rep_vec = response_vectors[rep_idx]
+            sim = cosine_similarity(vec, rep_vec)[0][0]
             if sim >= threshold:
                 cluster[j][rep_idx].append(i)
                 placed = True
@@ -74,14 +103,10 @@ def cluster_responses(list_of_responses, model, threshold):
 
 
 
-
-
-
-
 if __name__ == "__main__":
 
     all_paths = [path1] 
-    #all_paths += [path2, path3, path4, path5, path6, path7, path8, path9, path10, path11, path12, path13]
+    all_paths += [path2, path3, path4, path5, path6, path7, path8, path9, path10, path11, path12, path13]
     
     for file_path in all_paths:
         print(f"\n========================================================")
@@ -113,7 +138,7 @@ if __name__ == "__main__":
 
         base_file = os.path.basename(file_path)
         output_name = base_file.replace('.pickle', '_clusters.json')
-        output_filename = f"D:/LLM-Hallucination/data/meanings/{output_name}"
+        output_filename = f"D:/LLM-Hallucination/data/meanings/cos_sim/{output_name}"
         with open(output_filename, 'w') as f:
             json.dump(final_output, f, indent=2)
 
