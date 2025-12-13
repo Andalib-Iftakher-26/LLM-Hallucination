@@ -30,17 +30,6 @@ def vectorize_sentence(sentence, model):
 def cosine_similarity(A, B):
     return np.dot(A, B) / (np.linalg.norm(A) * np.linalg.norm(B))
 
-def euclidean_distance(A, B):
-    return np.linalg.norm(A - B)
-
-def manhattan_distance(A, B):
-    return np.sum(np.abs(A - B))
-
-
-
-def dot_product(A, B):
-    return np.dot(A, B)
-
 def pearson_correlation(A, B):
     return np.corrcoef(A, B)[0, 1]
 
@@ -67,13 +56,8 @@ def cluster_responses(list_of_responses, model, threshold, similarity_metric):
             rep_vec = response_vectors[rep_idx]
             if similarity_metric == 'cosine':
                 sim = cosine_similarity(vec, rep_vec)
-            elif similarity_metric == 'euclidean':
-                sim = -euclidean_distance(vec, rep_vec)  # Negative for reverse similarity
-            elif similarity_metric == 'manhattan':
-                sim = -manhattan_distance(vec, rep_vec)  # Negative for reverse similarity
 
-            elif similarity_metric == 'dot':
-                sim = dot_product(vec, rep_vec)
+            
             elif similarity_metric == 'pearson':
                 sim = pearson_correlation(vec, rep_vec)
             elif similarity_metric == 'rbf':
@@ -100,15 +84,14 @@ def cluster_responses(list_of_responses, model, threshold, similarity_metric):
 
 # Save clustering results for each metric in different directories
 if __name__ == "__main__":
-    similarity_metrics = ['cosine', 'euclidean', 'manhattan', 'dot', 'pearson', 'rbf']
+    similarity_metrics = ['cosine', 'pearson', 'rbf']
     
-    # Create output directories for each similarity metric
+    # Create output directories
     for metric in similarity_metrics:
         output_dir = f"D:/LLM-Hallucination/data/meanings/{metric}_sim"
         os.makedirs(output_dir, exist_ok=True)
 
     all_paths = [path1, path2, path3, path4, path5, path6, path7, path8, path9, path10, path11, path12, path13]
-    # all_paths = [path1]
 
     for file_path in all_paths:
         print(f"\n========================================================")
@@ -116,31 +99,51 @@ if __name__ == "__main__":
         print(f"========================================================")
 
         cleaned_data = create_cleaned_dataset(file_path)
-        final_output = {}
+        
+        # --- CORRECTED LOOP STRUCTURE ---
+        # 1. Loop through Metrics FIRST
+        for metric in similarity_metrics:
+            print(f"\nProcessing metric: {metric}...")
+            
+            # Initialize a FRESH dictionary for this specific metric
+            final_output = {}
 
-        for i in range(len(cleaned_data.questions)):
-            prompt_key = f"prompt_{i}: {cleaned_data.questions[i]}"
-            responses = cleaned_data.response_list[i]
+            # 2. Loop through Questions
+            for i in range(len(cleaned_data.questions)):
+                prompt_key = f"prompt_{i}: {cleaned_data.questions[i]}"
+                responses = cleaned_data.response_list[i]
+                
+                # Get list of log-prob lists: [[-0.1, -0.4], [-0.5, ...]]
+                log_probs_list = cleaned_data.token_log_probs[i]
 
-            for metric in similarity_metrics:
-                print(f"\n--- Clustering responses for prompt {i} using {metric} similarity ---")
+                # Run clustering
                 assigned_ids = cluster_responses(responses, word_vectors, SIMILARITY_THRESHOLD, metric)
 
                 prompt_clusters = {}
-                for j, response_text in enumerate(responses):
-                    cluster_id = assigned_ids[j]
+                for j in range(len(responses)):
+                    cluster_id = int(assigned_ids[j]) # Ensure it's a standard python int for JSON
+                    
+                    # Math Check: sum log-probs, then exp to get sequence probability (0.0 - 1.0)
+                    seq_prob = float(np.exp(np.sum(log_probs_list[j])))
+
                     if cluster_id not in prompt_clusters:
-                        prompt_clusters[cluster_id] = {"meaning_id": cluster_id, "members": []}
-                    prompt_clusters[cluster_id]["members"].append(response_text)
+                        prompt_clusters[cluster_id] = {
+                            "meaning_id": cluster_id, 
+                            "members": [], 
+                            "probabilities": []
+                        }
+                    
+                    prompt_clusters[cluster_id]["members"].append(responses[j])
+                    prompt_clusters[cluster_id]["probabilities"].append(seq_prob)
 
                 final_output[prompt_key] = list(prompt_clusters.values())
 
-                # Save the output for the current metric
-                base_file = os.path.basename(file_path)
-                output_name = base_file.replace('.pickle', f'_{metric}_clusters.json')
-                output_filename = f"D:/LLM-Hallucination/data/meanings/{metric}_sim/{output_name}"
+            # 3. Save File ONCE per metric (Efficient)
+            base_file = os.path.basename(file_path)
+            output_name = base_file.replace('.pickle', f'_{metric}_clusters.json')
+            output_filename = f"D:/LLM-Hallucination/data/meanings/{metric}_sim/{output_name}"
 
-                with open(output_filename, 'w') as f:
-                    json.dump(final_output, f, indent=2)
+            with open(output_filename, 'w') as f:
+                json.dump(final_output, f, indent=2)
 
-                print(f"\n Final clusters for {base_file} saved to '{output_filename}'")
+            print(f"Saved {metric} clusters to '{output_filename}'")

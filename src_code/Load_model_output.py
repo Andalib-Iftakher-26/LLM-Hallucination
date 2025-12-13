@@ -48,7 +48,8 @@ CleanedDataset = namedtuple("CleanedDataset", ["is_hallucination",
                                                  "response_list", 
                                                  "token_log_probs", 
                                                  "questions", 
-                                                 "contexts"])
+                                                 "contexts",
+                        ])
 
 
 
