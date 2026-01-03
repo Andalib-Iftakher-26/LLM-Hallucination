@@ -1,63 +1,84 @@
 import numpy as np
 import json
 import os
-from Load_model_output import path1, path2, path3, path4, path5, path6, path7, path8, path9, path10, path11, path12, path13, create_cleaned_dataset
+from Load_model_output import path1, path2, path3, path4, path5, path6, path7, path8, path9, path10, path11, path12, path13, originalData
 
 
-OUTPUT_DIR = "D:/LLM-Hallucination/data/original_authors"
-os.makedirs(OUTPUT_DIR, exist_ok=True)
+# Function to group responses based on their semantic_ids
+def group_responses_by_semantics(responses, semantic_ids, log_probs_list):
+    prompt_clusters = {}
+    for idx, response in enumerate(responses):
+        # Check if semantic_ids[idx] is an array or scalar
+        if isinstance(semantic_ids[idx], np.ndarray):  # If it's an array
+            cluster_id = int(semantic_ids[idx][0])  # Extract scalar value from the array
+        else:
+            cluster_id = int(semantic_ids[idx])  # Directly use it if it's a scalar
+
+        seq_prob = float(np.exp(np.sum(log_probs_list[idx])))  # Calculate the sequence probability
+
+        # Create the cluster if it doesn't exist
+        if cluster_id not in prompt_clusters:
+            prompt_clusters[cluster_id] = {
+                "meaning_id": cluster_id, 
+                "members": [], 
+                "probabilities": []
+            }
+        
+        # Append the response and probability to the corresponding cluster
+        prompt_clusters[cluster_id]["members"].append(response)
+        prompt_clusters[cluster_id]["probabilities"].append(seq_prob)
+
+    return prompt_clusters
+
+
+
+
 
 if __name__ == "__main__":
-    # Same list of paths as your meaning_mapper
+    # Similarity metrics are not needed now because we are directly using semantic_ids
+    similarity_metrics = ['semantic_id_based']  # Just a placeholder since clustering is already done.
+
+    # Create output directories
+    for metric in similarity_metrics:
+        output_dir = f"D:/LLM HALL/LLM-Hallucination/data/Authors"
+        os.makedirs(output_dir, exist_ok=True)
+
     all_paths = [path1, path2, path3, path4, path5, path6, path7, path8, path9, path10, path11, path12, path13]
 
     for file_path in all_paths:
-        base_file = os.path.basename(file_path)
         print(f"\n========================================================")
-        print(f"EXTRACTING ORIGINAL CLUSTERS: {base_file}")
+        print(f"STARTING PROCESSING FOR FILE: {os.path.basename(file_path)}")
         print(f"========================================================")
 
-        cleaned_data = create_cleaned_dataset(file_path)
-        final_output = {}
-
-        # Loop through questions
-        for i in range(len(cleaned_data.questions)):
-            prompt_key = f"prompt_{i}: {cleaned_data.questions[i]}"
+        # Load the cleaned data
+        cleaned_data = originalData(file_path)  # Use the originalData function which includes semantic_ids
+        
+        # Loop through all questions and responses
+        for metric in similarity_metrics:
+            print(f"\nProcessing metric: {metric}...")
             
-            responses = cleaned_data.response_list[i]
-            log_probs_list = cleaned_data.token_log_probs[i]
-            
-            # DIRECT LOOKUP: Get the IDs already in the pickle file
-            # These are usually integers like 0, 1, 2...
-            original_ids = cleaned_data.semantic_ids[i]
+            # Initialize a fresh dictionary for this specific metric
+            final_output = {}
 
-            prompt_clusters = {}
-
-            for j in range(len(responses)):
-                # 1. Get the ID directly
-                cluster_id = int(original_ids[j])
+            # Loop through Questions
+            for i in range(len(cleaned_data.questions)):
+                prompt_key = f"prompt_{i}: {cleaned_data.questions[i]}"
+                responses = cleaned_data.response_list[i]
                 
-                # 2. Calculate Probability (Required for Bayesian Math)
-                seq_prob = float(np.exp(np.sum(log_probs_list[j])))
+                # Get list of log-prob lists: [[-0.1, -0.4], [-0.5, ...]]
+                log_probs_list = cleaned_data.token_log_probs[i]
 
-                # 3. Build the structure
-                if cluster_id not in prompt_clusters:
-                    prompt_clusters[cluster_id] = {
-                        "meaning_id": cluster_id, 
-                        "members": [], 
-                        "probabilities": []
-                    }
-                
-                prompt_clusters[cluster_id]["members"].append(responses[j])
-                prompt_clusters[cluster_id]["probabilities"].append(seq_prob)
+                # Group responses by semantic_ids (pre-existing clustering)
+                prompt_clusters = group_responses_by_semantics(responses, cleaned_data.semantic_ids, log_probs_list)
 
-            final_output[prompt_key] = list(prompt_clusters.values())
+                final_output[prompt_key] = list(prompt_clusters.values())
 
-        # Save output matches your specific naming convention
-        output_name = base_file.replace('.pickle', '_original_clusters.json')
-        output_filename = os.path.join(OUTPUT_DIR, output_name)
+            # Save the results to a JSON file
+            base_file = os.path.basename(file_path)
+            output_name = base_file.replace('.pickle', f'_{metric}_clusters.json')
+            output_filename = f"D:/LLM HALL/LLM-Hallucination/data/Authors/{output_name}"
 
-        with open(output_filename, 'w') as f:
-            json.dump(final_output, f, indent=2)
+            with open(output_filename, 'w') as f:
+                json.dump(final_output, f, indent=2)
 
-        print(f"Saved original clusters to '{output_filename}'")
+            print(f"Saved {metric} clusters to '{output_filename}'")
