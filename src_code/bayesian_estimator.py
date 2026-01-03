@@ -3,10 +3,13 @@ from scipy.stats import dirichlet
 
 class BayesianSemanticEntropy:
     def __init__(self, alpha=1.0, max_mc_samples=5000):
-        self.alpha = alpha
-        self.max_mc_samples = max_mc_samples
+        self.alpha = alpha  # Hyperparameter for Dirichlet distribution
+        self.max_mc_samples = max_mc_samples  # Max number of Monte Carlo samples
 
     def _shannon_entropy(self, probability_vector):
+        """
+        Calculate Shannon entropy for a given probability vector.
+        """
         p = np.array(probability_vector) + 1e-12  # Small value to avoid log(0)
         return -np.sum(p * np.log(p))
 
@@ -32,13 +35,17 @@ class BayesianSemanticEntropy:
         unique_meanings = sorted(meaning_counts.keys())
         lower_bounds = np.array([meaning_counts[m] for m in unique_meanings])
 
+        # If the total probability for observed meanings is too high, stop
         if np.sum(lower_bounds) >= 1.0 - 1e-6:
             return 0.0, 0.0
 
         K_observed = len(unique_meanings)
 
         entropy_estimates = []
-        for num_unseen in range(0, 5):  # Assuming 0 to 4 unseen categories
+        variance_estimates = []
+
+        # Monte Carlo simulation: Adjust the number of unseen categories (0 to 4)
+        for num_unseen in range(0, 5):
             K_total = K_observed + num_unseen
             alpha_vec = np.full(K_total, self.alpha)
 
@@ -57,15 +64,17 @@ class BayesianSemanticEntropy:
             entropies = [self._shannon_entropy(vec) for vec in valid_vectors]
             avg_entropy_for_K = np.mean(entropies)
             entropy_estimates.append(avg_entropy_for_K)
+            variance_estimates.append(np.var(entropies))  # Compute variance for each K
 
         if not entropy_estimates:
             return 0.0, 0.0
 
         final_entropy = np.mean(entropy_estimates)
 
-        # Variance of entropy estimates
+        # Calculate variance of entropy estimates
         entropy_variance = np.var(entropy_estimates)
-        
+
+        # Return both entropy and variance
         return final_entropy, entropy_variance
 
     def adaptive_estimator(self, samples):
@@ -90,6 +99,7 @@ class BayesianSemanticEntropy:
         unique_meanings = sorted(meaning_counts.keys())
         lower_bounds = np.array([meaning_counts[m] for m in unique_meanings])
 
+        # If the total probability for observed meanings is too high, stop
         if np.sum(lower_bounds) >= 1.0 - 1e-6:
             return 0.0, 0.0
 
@@ -98,7 +108,8 @@ class BayesianSemanticEntropy:
         means_per_K = []
         vars_per_K = []
 
-        for num_unseen in range(0, 5):  # Considering unseen categories
+        # Monte Carlo simulation for unseen categories
+        for num_unseen in range(0, 5):
             K_total = K_observed + num_unseen
             alpha_vec = np.full(K_total, self.alpha)
 
@@ -111,7 +122,7 @@ class BayesianSemanticEntropy:
             valid_mask = np.all(observed_candidates >= lower_bounds, axis=1)
             valid_vectors = candidate_vectors[valid_mask]
 
-            if len(valid_vectors) < 2:  # Need at least 2 for variance
+            if len(valid_vectors) < 2:
                 continue
 
             entropies = [self._shannon_entropy(vec) for vec in valid_vectors]
@@ -120,9 +131,8 @@ class BayesianSemanticEntropy:
 
         if not means_per_K:
             return 0.0, 0.0
-        
-        final_entropy = np.mean(means_per_K)
 
+        final_entropy = np.mean(means_per_K)
         avg_of_variances = np.mean(vars_per_K)
         var_of_means = np.var(means_per_K)
         
