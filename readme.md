@@ -107,6 +107,7 @@ Integrate hierarchically over K to compute the expected semantic entropy and the
  ## step 5
 ```
 1. Use the estimated semantic entropy as a signal to determine whether a response is likely reliable or hallucinated
+```
 ---
 
 
