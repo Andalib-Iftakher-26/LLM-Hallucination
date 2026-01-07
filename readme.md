@@ -96,7 +96,7 @@ Enforce lower bounds on meaning probabilities using the summed likelihoods of ob
 
  ## step 4
 
-For each Dirichlet distribution, compute Shannon entropy
+For each Dirichlet distribution with a specific alpha, compute Shannon entropy
 
 This induces a probability distribution over entropy values
 
