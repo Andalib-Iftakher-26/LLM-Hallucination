@@ -15,6 +15,9 @@ LLM-HALLUCINATION/
 ├── data/
 │   ├── generations/
 │   ├── meanings/
+|   |   ├── cosine_sim
+|   |   ├── pearson_sim
+|   |   ├── rbf_sim
 │   ├── prompts/
 │   │   ├── squad_prompts.json
 │   │   ├── svamp_prompts.json
@@ -29,34 +32,15 @@ LLM-HALLUCINATION/
 │       └── TriviaQA/
 │           ├── TriviaQA.json
 │           └── TriviaQA.ipynb
-├── experiments/
-│   ├── analyze_results.py
-│   ├── run_adaptive_budget.py
-│   └── run_fixed_budget.py
 ├── pdfs/
 ├── src_code/
-│   ├── bayesian_estimator/
-│   │   ├── dirichlet.py
-│   │   ├── estimator.py
-│   │   ├── hierarchical_model.py
-│   │   ├── truncated_dirichlet.py
-│   │   └── utils.py
-│   ├── evaluation/
-│   │   ├── compare_baseline.py
-│   │   ├── metrics.py
-│   │   └── visualize_results.py
-│   ├── models/
-│   │   ├── phi-2.Q4_K_M.gguf
-│   │   ├── qwen1_5-0.5b-chat-q4_k_m.gguf
-│   │   ├── tinyllama-1.1b-chat-v1.0.Q4_0.gguf
-│   │   ├── phi.py
-│   │   ├── qwen.py
-│   │   └── tinyllama.py
-│   ├── adaptive_sampler.py
-│   ├── data_utils.py
-│   ├── estimate_entropy.py
-│   ├── meaning_mapper.py
-│   └── train_prior.py
+│   ├── bayesian_estimator.py
+|   ├── eval_tune.py
+|   ├── load_model_output.py
+|   ├── meaning_mapper.py
+|   ├── original_clusters.py 
+|   ├── run_adaptive.py 
+|      
 ├── .gitignore
 ├── .gitattributes
 ├── requirements.txt
@@ -80,6 +64,50 @@ pip install -r requirements.txt
 
 If you’re using llama-cpp-python or similar:  Install Visual Studio Build Tools with Desktop Development with C++.
 ```pip install llama-cpp-python --force-reinstall --no-cache-dir```
+
+---
+
+
+
+## THEORY
+---
+ ## step 1
+```
+For each prompt, generate multiple responses from the language model
+
+Group the responses into semantic clusters (each cluster represents one meaning)
+
+Let the number of observed meanings be k_obs
+```
+
+ ## step 2
+```
+For each prompt, construct a probability distribution over the possible total number of meanings K, conditioned on k_obs
+
+Enforce the constraint K ≥ k_min, where k_min is the minimum number of meanings observed for the prompt, k_min = k_obs
+```
+
+ ## step 3
+```
+For each possible value of K, construct a Dirichlet distribution over the K meaning probabilities
+
+Enforce lower bounds on meaning probabilities using the summed likelihoods of observed sequences belonging to each meaning
+```
+
+ ## step 4
+```
+For each Dirichlet distribution, compute Shannon entropy
+
+This induces a probability distribution over entropy values
+
+Integrate hierarchically over K to compute the expected semantic entropy and the variance of semantic entropy
+```
+
+
+ ## step 5
+```
+1. Use the estimated semantic entropy as a signal to determine whether a response is likely reliable or hallucinated
+---
 
 
 
