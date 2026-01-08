@@ -51,6 +51,7 @@ CleanedDataset = namedtuple("CleanedDataset",
                             "token_log_probs", 
                             "questions", 
                             "contexts",
+                            'p_false',
                         ]
                             )
 
@@ -68,6 +69,7 @@ def create_cleaned_dataset(path: str) -> CleanedDataset:
     is_hallucination = data[0],
     response_list    = data[2],
     token_log_probs  = data[3],
+    p_false          = data[4],
     questions        = data[6],
     contexts         = data[7]
     )
@@ -83,6 +85,7 @@ DatawithSemantic = namedtuple("CleanedDataset",
                             "token_log_probs", 
                             "questions", 
                             "contexts",
+                            'p_false',
                             "semantic_ids",]
                             )
 
@@ -97,9 +100,11 @@ def originalData(path: str) -> DatawithSemantic:
     semantic_ids     = data[1],
     response_list    = data[2],
     token_log_probs  = data[3],
+    p_false          = data[4],
     questions        = data[6],
     contexts         = data[7],
     
     )
     return original_data
+
 

@@ -31,9 +31,6 @@ def group_responses_by_semantics(responses, semantic_ids, log_probs_list):
     return prompt_clusters
 
 
-
-
-
 if __name__ == "__main__":
     # Similarity metrics are not needed now because we are directly using semantic_ids
     similarity_metrics = ['semantic_id_based']  # Just a placeholder since clustering is already done.
@@ -56,8 +53,7 @@ if __name__ == "__main__":
         # Loop through all questions and responses
         for metric in similarity_metrics:
             print(f"\nProcessing metric: {metric}...")
-            
-            # Initialize a fresh dictionary for this specific metric
+
             final_output = {}
 
             # Loop through Questions
@@ -68,10 +64,31 @@ if __name__ == "__main__":
                 # Get list of log-prob lists: [[-0.1, -0.4], [-0.5, ...]]
                 log_probs_list = cleaned_data.token_log_probs[i]
 
+                # --- NEW CODE ADDED HERE ---
+                # Get p_false and is_hallucination for this prompt (one value per prompt)
+                p_false_i = None
+                is_hall_i = None
+
+                if hasattr(cleaned_data, "p_false"):
+                    p_false_i = cleaned_data.p_false[i]  # Single value per prompt
+                    p_false_i = float(p_false_i) if p_false_i is not None else None
+
+                if hasattr(cleaned_data, "is_hallucination"):
+                    is_hall_i = cleaned_data.is_hallucination[i]  # Single value per prompt
+                    is_hall_i = bool(is_hall_i) if is_hall_i is not None else None
+                # --- END OF NEW CODE ---
+
                 # Group responses by semantic_ids (pre-existing clustering)
                 prompt_clusters = group_responses_by_semantics(responses, cleaned_data.semantic_ids, log_probs_list)
 
-                final_output[prompt_key] = list(prompt_clusters.values())
+                # --- NEW CODE ADDED HERE ---
+                # Add p_false and is_hallucination as prompt-level metadata
+                final_output[prompt_key] = {
+                    "p_false": p_false_i,
+                    "is_hallucination": is_hall_i,
+                    "clusters": list(prompt_clusters.values())
+                }
+                # --- END OF NEW CODE ---
 
             # Save the results to a JSON file
             base_file = os.path.basename(file_path)

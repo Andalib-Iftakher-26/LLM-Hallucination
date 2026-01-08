@@ -1,135 +1,180 @@
 import json
 import os
-from bayesian_estimator import BayesianSemanticEntropy
 import numpy as np
-from concurrent.futures import ProcessPoolExecutor
+from collections import defaultdict
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
+from bayesian_estimator import BayesianSemanticEntropy
+
+# =========================
 # CONFIG
-# Paths to the directories containing the JSON files for each similarity metric
-CLUSTERS_DIRECTORY_COSINE_SIM = r"D:/LLM HALL/LLM-Hallucination/data/meanings/cosine_sim"  # Cosine similarity files
-CLUSTERS_DIRECTORY_PEARSON_SIM = r'D:/LLM HALL/LLM-Hallucination/data/meanings/pearson_sim'  # Pearson similarity files
-CLUSTERS_DIRECTORY_RBF_SIM = r'D:/LLM HALL/LLM-Hallucination/data/meanings/rbf_sim'  # RBF similarity files
+# =========================
+CLUSTERS_DIRECTORY_COSINE_SIM = r"D:/LLM HALL/LLM-Hallucination/data/meanings/cosine_sim"
+CLUSTERS_DIRECTORY_PEARSON_SIM = r"D:/LLM HALL/LLM-Hallucination/data/meanings/pearson_sim"
+CLUSTERS_DIRECTORY_RBF_SIM = r"D:/LLM HALL/LLM-Hallucination/data/meanings/rbf_sim"
 
-# Path to save the results
-OUTPUT_DIRECTORY = r'D:/LLM HALL/LLM-Hallucination/result'
+OUTPUT_DIRECTORY = r"D:/LLM HALL/LLM-Hallucination/result"
+OUTPUT_FILENAME = "adaptive_results.json"
 
-# Variance threshold from the paper (Gamma parameter)
 VARIANCE_THRESHOLD = 0.005
-MAX_SAMPLES = 500  # Limit the number of samples to process (for performance optimization)
+MAX_SAMPLES = 500
+RANDOM_SEED = 0
 
-def process_file(file_path, metric_name, estimator):
-    """Process a single JSON file and return the results."""
+
+# =========================
+# HELPERS
+# =========================
+def samples_to_clusters(samples):
+    """
+    Convert flat samples:
+        [{"meaning_id": m, "probability": p, ...}, ...]
+    into estimator input format:
+        [{"meaning_id": m, "probabilities": [p1, p2, ...]}, ...]
+    """
+    by_meaning = defaultdict(list)
+    for s in samples:
+        by_meaning[int(s["meaning_id"])].append(float(s["probability"]))
+
+    # keep stable ordering
+    return [{"meaning_id": mid, "probabilities": probs}
+            for mid, probs in sorted(by_meaning.items(), key=lambda x: x[0])]
+
+
+def build_pool_from_prompt_clusters(prompt_clusters, max_samples=MAX_SAMPLES):
+    """
+    prompt_clusters (from your JSON) look like:
+      [{"meaning_id": 1, "members": [...], "probabilities": [...]}, ...]
+
+    Returns a flat list of samples.
+    """
+    pool = []
+    for cluster in prompt_clusters:
+        m_id = int(cluster.get("meaning_id"))
+        probs = cluster.get("probabilities", []) or []
+        members = cluster.get("members", []) or []
+
+        for i, p in enumerate(probs):
+            pool.append({
+                "meaning_id": m_id,
+                "probability": float(p),
+                "text": members[i] if i < len(members) else ""
+            })
+            if len(pool) >= max_samples:
+                return pool
+
+    return pool
+
+
+# =========================
+# WORKER
+# =========================
+def process_file(file_path, metric_name):
+    """
+    Runs adaptive estimation for all prompts in ONE json file.
+    IMPORTANT: estimator is created INSIDE the process (safe for multiprocessing).
+    """
     results = {}
 
+    estimator = BayesianSemanticEntropy(alpha=1.0)
+    rng = np.random.default_rng(RANDOM_SEED)
+
     try:
-        with open(file_path, 'r') as f:
+        with open(file_path, "r", encoding="utf-8") as f:
             data = json.load(f)
 
-        print(f"Running Adaptive Loop on {os.path.basename(file_path)} ({len(data)} prompts)...")
+        print(f"[{metric_name}] Running on {os.path.basename(file_path)} ({len(data)} prompts)")
 
-        # Loop through all prompts in the file
         for prompt_key, clusters in data.items():
-            pool_of_samples = []
-
-            # Collect samples from clusters (handling each response with its probability)
-            for cluster in clusters:
-                m_id = cluster['meaning_id']
-                for i, prob in enumerate(cluster['probabilities']):
-                    pool_of_samples.append({
-                        'meaning_id': m_id,
-                        'probability': float(prob),  # Ensure prob is treated as a float
-                        'text': cluster['members'][i]  # Corresponding response text
-                    })
-                    if len(pool_of_samples) >= MAX_SAMPLES:
-                        break
-                if len(pool_of_samples) >= MAX_SAMPLES:
-                    break
-
+            pool_of_samples = build_pool_from_prompt_clusters(clusters, max_samples=MAX_SAMPLES)
             if not pool_of_samples:
                 continue
 
+            # Shuffle to avoid file-order bias
+            rng.shuffle(pool_of_samples)
+
             current_samples = []
             final_entropy = 0.0
-            final_N = 0
             final_var = 0.0
+            final_N = 0
 
-            # Run adaptive entropy loop
             for n in range(len(pool_of_samples)):
-                new_sample = pool_of_samples[n]
-                current_samples.append(new_sample)
-                entropy, variance = estimator.estimate_entropy(current_samples)
-                
-                # If variance is below threshold, stop and store the result
-                if n >= 1 and variance < VARIANCE_THRESHOLD:
-                    final_entropy = entropy
-                    final_var = variance
-                    final_N = n + 1
-                    break
+                current_samples.append(pool_of_samples[n])
 
-                final_entropy = entropy
-                final_var = variance
+                # ✅ Convert samples -> clusters before calling estimator
+                clusters_for_estimator = samples_to_clusters(current_samples)
+
+                entropy, variance = estimator.estimate_entropy(clusters_for_estimator)
+
+                final_entropy = float(entropy)
+                final_var = float(variance)
                 final_N = n + 1
 
-            # Store the results for the current prompt
+                if n >= 1 and final_var < VARIANCE_THRESHOLD:
+                    break
+
             results[prompt_key] = {
                 "entropy": final_entropy,
                 "variance": final_var,
                 "samples_used": final_N
             }
 
-        print(f"Processed {os.path.basename(file_path)}...")
-
     except Exception as e:
-        print(f"Error processing {file_path}: {e}")
+        print(f"[{metric_name}] Error processing {file_path}: {e}")
 
     return metric_name, results
 
 
+# =========================
+# MAIN
+# =========================
 def run_adaptive_experiment():
-    # Initialize Math Engine
-    estimator = BayesianSemanticEntropy(alpha=1.0)
-    
-    # Create a list of directories to process (cosine, pearson, rbf)
     directories = [
-        (CLUSTERS_DIRECTORY_COSINE_SIM, 'cosine_sim'),
-        (CLUSTERS_DIRECTORY_PEARSON_SIM, 'pearson_sim'),
-        (CLUSTERS_DIRECTORY_RBF_SIM, 'rbf_sim')
+        (CLUSTERS_DIRECTORY_COSINE_SIM, "cosine_sim"),
+        (CLUSTERS_DIRECTORY_PEARSON_SIM, "pearson_sim"),
+        (CLUSTERS_DIRECTORY_RBF_SIM, "rbf_sim"),
     ]
 
-    # List to store the results
-    all_results = {}
+    # Store results separately per metric
+    all_results_by_metric = {
+        "cosine_sim": {},
+        "pearson_sim": {},
+        "rbf_sim": {},
+    }
 
-    # Process files in parallel for each similarity metric
+    futures = []
     with ProcessPoolExecutor() as executor:
-        futures = []
-        
         for directory_path, metric_name in directories:
             print(f"Processing files in {metric_name} directory...")
 
-            # Iterate through all JSON files in the current directory
+            if not os.path.isdir(directory_path):
+                print(f"WARNING: Directory not found: {directory_path}")
+                continue
+
             for filename in os.listdir(directory_path):
-                if filename.endswith(".json"):  # Process only .json files
+                if filename.endswith(".json"):
                     file_path = os.path.join(directory_path, filename)
-                    futures.append(executor.submit(process_file, file_path, metric_name, estimator))
+                    futures.append(executor.submit(process_file, file_path, metric_name))
 
-        # Collect results from all files
-        for future in futures:
+        for future in as_completed(futures):
             metric_name, results = future.result()
-            if metric_name not in all_results:
-                all_results[metric_name] = {}
-            all_results[metric_name].update(results)
+            # Merge into that metric only
+            all_results_by_metric.setdefault(metric_name, {}).update(results)
 
-    # Save results to the specified directory
-    output_filename = "adaptive_results.json"
-    output_filepath = os.path.join(OUTPUT_DIRECTORY, output_filename)
-
-    # Create output directory if it doesn't exist
+    # Write one file per metric
     os.makedirs(OUTPUT_DIRECTORY, exist_ok=True)
 
-    # Save all the results
-    with open(output_filepath, "w") as f:
-        json.dump(all_results, f, indent=2)
-        print(f"Done. Results saved to {output_filepath}.")
+    for metric_name, metric_results in all_results_by_metric.items():
+        if not metric_results:
+            print(f"Skipping {metric_name}: no results.")
+            continue
+
+        output_filename = f"adaptive_results_{metric_name}.json"
+        output_path = os.path.join(OUTPUT_DIRECTORY, output_filename)
+
+        with open(output_path, "w", encoding="utf-8") as f:
+            json.dump(metric_results, f, indent=2, ensure_ascii=False)
+
+        print(f"Saved {metric_name} results to: {output_path}")
 
 if __name__ == "__main__":
     run_adaptive_experiment()
