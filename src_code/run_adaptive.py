@@ -35,7 +35,7 @@ def samples_to_clusters(samples):
     for s in samples:
         by_meaning[int(s["meaning_id"])].append(float(s["probability"]))
 
-    # keep stable ordering
+    # Keep stable ordering
     return [{"meaning_id": mid, "probabilities": probs}
             for mid, probs in sorted(by_meaning.items(), key=lambda x: x[0])]
 
@@ -82,9 +82,26 @@ def process_file(file_path, metric_name):
         with open(file_path, "r", encoding="utf-8") as f:
             data = json.load(f)
 
+        # Debugging: print the structure of data
+        print(f"Data is a {type(data)}")
+        print(f"First element in data: {list(data.keys())[0] if isinstance(data, dict) else 'No data'}")
+
+        # Check if data is a dictionary (as expected)
+        if isinstance(data, dict):
+            print(f"Data is a dictionary with {len(data)} prompts.")
+        else:
+            print(f"Unexpected data structure: {type(data)}")
+            return metric_name, {}
+
         print(f"[{metric_name}] Running on {os.path.basename(file_path)} ({len(data)} prompts)")
 
-        for prompt_key, clusters in data.items():
+        # Process each prompt
+        for prompt_key, prompt_data in data.items():
+            # Extract metadata (p_false, is_hallucination)
+            p_false_i = prompt_data.get("p_false", None)
+            is_hall_i = prompt_data.get("is_hallucination", None)
+            clusters = prompt_data.get('clusters', [])
+
             pool_of_samples = build_pool_from_prompt_clusters(clusters, max_samples=MAX_SAMPLES)
             if not pool_of_samples:
                 continue
@@ -100,7 +117,7 @@ def process_file(file_path, metric_name):
             for n in range(len(pool_of_samples)):
                 current_samples.append(pool_of_samples[n])
 
-                # ✅ Convert samples -> clusters before calling estimator
+                # Convert samples -> clusters before calling estimator
                 clusters_for_estimator = samples_to_clusters(current_samples)
 
                 entropy, variance = estimator.estimate_entropy(clusters_for_estimator)
@@ -112,10 +129,13 @@ def process_file(file_path, metric_name):
                 if n >= 1 and final_var < VARIANCE_THRESHOLD:
                     break
 
+            # Store results per prompt (including p_false and is_hallucination)
             results[prompt_key] = {
                 "entropy": final_entropy,
                 "variance": final_var,
-                "samples_used": final_N
+                "samples_used": final_N,
+                "p_false": p_false_i,
+                "is_hallucination": is_hall_i
             }
 
     except Exception as e:
@@ -175,6 +195,7 @@ def run_adaptive_experiment():
             json.dump(metric_results, f, indent=2, ensure_ascii=False)
 
         print(f"Saved {metric_name} results to: {output_path}")
+
 
 if __name__ == "__main__":
     run_adaptive_experiment()
