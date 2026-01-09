@@ -64,8 +64,7 @@ if __name__ == "__main__":
                 # Get list of log-prob lists: [[-0.1, -0.4], [-0.5, ...]]
                 log_probs_list = cleaned_data.token_log_probs[i]
 
-                # --- NEW CODE ADDED HERE ---
-                # Get p_false and is_hallucination for this prompt (one value per prompt)
+                #prompt-wise labels stored once per prompt
                 p_false_i = None
                 is_hall_i = None
 
@@ -76,7 +75,7 @@ if __name__ == "__main__":
                 if hasattr(cleaned_data, "is_hallucination"):
                     is_hall_i = cleaned_data.is_hallucination[i]  # Single value per prompt
                     is_hall_i = bool(is_hall_i) if is_hall_i is not None else None
-                # --- END OF NEW CODE ---
+                
 
                 # Group responses by semantic_ids (pre-existing clustering)
                 prompt_clusters = group_responses_by_semantics(responses, cleaned_data.semantic_ids, log_probs_list)

@@ -162,7 +162,7 @@ if __name__ == "__main__":
                 responses = cleaned_data.response_list[i]
                 log_probs_list = cleaned_data.token_log_probs[i]
 
-                # ✅ prompt-wise labels stored once per prompt
+                #prompt-wise labels stored once per prompt
                 p_false_i = None
                 is_hall_i = None
 
