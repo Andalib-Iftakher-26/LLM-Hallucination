@@ -48,7 +48,7 @@ if __name__ == "__main__":
         print(f"========================================================")
 
         # Load the cleaned data
-        cleaned_data = originalData(file_path)  # Use the originalData function which includes semantic_ids
+        cleaned_data = originalData(file_path)  
         
         # Loop through all questions and responses
         for metric in similarity_metrics:
