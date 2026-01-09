@@ -1,35 +1,5 @@
 
 def save_entropy_diagnostics(input_dir: str, output_dir: str):
-    """
-    Generate and save diagnostic plots for entropy-based hallucination detection.
-
-    Args:
-        input_dir (str): Directory containing result files.
-        output_dir (str): Directory where plots and metrics.json will be saved.
-
-    Expected filenames in input_dir (auto-discovered):
-        - baseline_results.json / .pkl / .pickle   (optional)
-        - candidate_results.json / .pkl / .pickle  (optional)
-
-    Expected data format (preferred):
-        dict[prompt_id] -> dict with keys like:
-            entropy (float), variance (float, optional),
-            samples_used (int, optional),
-            p_false (float, optional),
-            is_hallucination (bool/int/str)
-
-    Outputs in output_dir:
-        - entropy_hist_{run}.png
-        - entropy_vs_pfalse_{run}.png
-        - entropy_vs_samples_{run}.png
-        - variance_vs_samples_{run}.png
-        - roc_entropy_{run}.png (if sklearn + labels)
-        - pr_entropy_{run}.png  (if sklearn + labels)
-        - calibration_pfalse_{run}.png (if sklearn + p_false + labels)
-        - entropy_hist_compare.png (if both runs exist)
-        - scatter_entropy_compare.png (if both runs have p_false)
-        - metrics.json
-    """
     import os, json, pickle, math
     import numpy as np
     import pandas as pd
