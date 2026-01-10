@@ -9,9 +9,7 @@ from bayesian_estimator import BayesianSemanticEntropy
 # =========================
 # CONFIG
 # =========================
-CLUSTERS_DIRECTORY_COSINE_SIM = r"D:/LLM HALL/LLM-Hallucination/data/meanings/cosine_sim"
-CLUSTERS_DIRECTORY_PEARSON_SIM = r"D:/LLM HALL/LLM-Hallucination/data/meanings/pearson_sim"
-CLUSTERS_DIRECTORY_RBF_SIM = r"D:/LLM HALL/LLM-Hallucination/data/meanings/rbf_sim"
+AUTHOR = r'D:\LLM HALL\LLM-Hallucination\data\Authors'
 
 OUTPUT_DIRECTORY = r"D:/LLM HALL/LLM-Hallucination/result"
 OUTPUT_FILENAME = "adaptive_results.json"
@@ -149,16 +147,12 @@ def process_file(file_path, metric_name):
 # =========================
 def run_adaptive_experiment():
     directories = [
-        (CLUSTERS_DIRECTORY_COSINE_SIM, "cosine_sim"),
-        (CLUSTERS_DIRECTORY_PEARSON_SIM, "pearson_sim"),
-        (CLUSTERS_DIRECTORY_RBF_SIM, "rbf_sim"),
+        (AUTHOR, "DeRoberta_NLI"),
     ]
 
     # Store results separately per metric
     all_results_by_metric = {
-        "cosine_sim": {},
-        "pearson_sim": {},
-        "rbf_sim": {},
+        "author": {},
     }
 
     futures = []
