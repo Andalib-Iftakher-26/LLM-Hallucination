@@ -15,7 +15,7 @@ from bayesian_estimator import BayesianSemanticEntropy, KPrior
 CLUSTERS_DIRECTORY_COSINE_SIM = r"D:/LLM HALL/LLM-Hallucination/data/meanings/cosine_sim"
 CLUSTERS_DIRECTORY_PEARSON_SIM = r"D:/LLM HALL/LLM-Hallucination/data/meanings/pearson_sim"
 CLUSTERS_DIRECTORY_RBF_SIM = r"D:/LLM HALL/LLM-Hallucination/data/meanings/rbf_sim"
-AUTHOR = r"D:/LLM HALL/LLM-Hallucination/data/meanings/author"
+AUTHOR = r"D:\LLM HALL\LLM-Hallucination\data\Authors"
 
 OUTPUT_DIRECTORY = r"D:/LLM HALL/LLM-Hallucination/result"
 
