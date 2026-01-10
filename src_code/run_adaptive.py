@@ -94,7 +94,7 @@ def samples_to_clusters_with_text(samples: List[dict]) -> List[dict]:
 def compute_support_size_from_prompt(prompt_data: dict) -> int:
     """
     Support size K for a prompt = number of distinct meaning_ids present.
-    This is what the paper uses to learn a prior over K (Eq. 5). [1](https://mqoutlook-my.sharepoint.com/personal/andalib_iftakher_students_mq_edu_au/Documents/Microsoft%20Copilot%20Chat%20Files/bayesian_estimator.py)
+    This is what the paper uses to learn a prior over K (Eq. 5).
     """
     clusters = prompt_data.get("clusters", []) or []
     mids = set()
@@ -109,7 +109,7 @@ def compute_support_size_from_prompt(prompt_data: dict) -> int:
 def build_k_prior_for_metric(directory_path: str, train_prompts: int = TRAIN_PROMPTS_PER_METRIC) -> KPrior:
     """
     Build a discrete prior over K from the first `train_prompts` prompts encountered in the metric directory.
-    This approximates the paper's training-set procedure for Eq. 5. [1](https://mqoutlook-my.sharepoint.com/personal/andalib_iftakher_students_mq_edu_au/Documents/Microsoft%20Copilot%20Chat%20Files/bayesian_estimator.py)
+    This approximates the paper's training-set procedure for Eq. 5.
     """
     support_sizes = []
     collected = 0
