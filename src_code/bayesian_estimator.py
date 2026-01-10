@@ -1,162 +1,279 @@
-import numpy as np
+
+# bayesian_estimator.py
 import math
-from scipy.stats import dirichlet
+from dataclasses import dataclass
+from typing import Dict, List, Optional, Tuple
+
+import numpy as np
+
+
+@dataclass
+class KPrior:
+    """
+    Discrete prior over support size K.
+    probs: dict mapping K -> probability (sums to 1).
+    """
+    probs: Dict[int, float]
+
+    def conditioned_on_ge(self, k_min: int) -> "KPrior":
+        filt = {k: p for k, p in self.probs.items() if k >= k_min and p > 0}
+        if not filt:
+            # Fallback: if nothing survives, put all mass on k_min
+            return KPrior({k_min: 1.0})
+        s = sum(filt.values())
+        return KPrior({k: p / s for k, p in filt.items()})
 
 
 class BayesianSemanticEntropy:
-    def __init__(self, alpha=1.0, max_mc_samples=5000):
+    """
+    Bayesian estimator for semantic entropy with unknown number of meanings K.
+
+    Faithful to:
+     - Dirichlet belief over meaning probabilities (paper §3.1)
+      - Optional constraint using sequence probabilities (paper §3.2, Eq. 4)
+      - Unknown K with a discrete prior and aggregation (paper §3.3, Eq. 5–6)
+      - Truncated Dirichlet expectations via self-normalized importance sampling (paper Appendix A.2, Eq. 10)
+
+    Input "meaning_clusters" format (per prompt):
+      [
+        {"meaning_id": int,
+         "members": [str, ...],          # generated sequences (can repeat)
+         "probabilities": [float, ...]}  # p(s|x) (or proxy; must align with members list)
+      ]
+    """
+
+    def __init__(
+        self,
+        alpha: float = 1.0,
+        mc_samples: int = 8000,
+        eps: float = 1e-12,
+        k_prior: Optional[KPrior] = None,
+        k_smoothing: float = 1.0,
+    ):
         self.alpha = float(alpha)
-        self.max_mc_samples = int(max_mc_samples)
+        self.mc_samples = int(mc_samples)
+        self.eps = float(eps)
+        self.k_prior = k_prior  # can be set/fit later
+        self.k_smoothing = float(k_smoothing)
 
-        # Hierarchical prior over unseen meanings
-        self.lambda_unseen = 1.0
-        self.max_unseen = 4
+    # ----------------------------
+    # Public: fit K prior from training prompts
+    # ----------------------------
+    def fit_k_prior_from_support_sizes(
+        self,
+        support_sizes: List[int],
+        k_max: Optional[int] = None,
+    ) -> KPrior:
+        """
+        Build discrete prior over K using a histogram of observed support sizes (training set),
+        matching paper §3.3 (Eq. 5).
 
-        # Safety knobs
-        self.eps = 1e-12
-        self.lb_clip = 0.999999   # lower bound sum cap (prevents impossible constraints)
-        self.min_valid = 200      # minimum valid samples desired after filtering
-        self.max_resample_rounds = 8  # keep trying to get enough valid samples
+        Uses additive smoothing to avoid zeros.
+        """
+        if not support_sizes:
+            self.k_prior = KPrior({1: 1.0})
+            return self.k_prior
 
+        support_sizes = [int(k) for k in support_sizes if k >= 1]
+        if not support_sizes:
+            self.k_prior = KPrior({1: 1.0})
+            return self.k_prior
 
-    def _shannon_entropy(self, probability_vector):
-        p = np.asarray(probability_vector, dtype=float) + self.eps
-        p = p / p.sum()
-        return float(-np.sum(p * np.log(p)))
+        if k_max is None:
+            k_max = max(support_sizes)
 
+        k_max = int(max(1, k_max))
+        counts = np.zeros(k_max + 1, dtype=float)
 
-    def estimate_entropy(self, meaning_clusters):
-        if not meaning_clusters:
+        for k in support_sizes:
+            if 1 <= k <= k_max:
+                counts[k] += 1.0
+
+        # Additive smoothing across 1..k_max
+        counts[1:] += self.k_smoothing
+        probs = counts[1:] / counts[1:].sum()
+
+        prior = {k: float(probs[k - 1]) for k in range(1, k_max + 1)}
+        self.k_prior = KPrior(prior)
+        return self.k_prior
+
+    # ----------------------------
+    # Core API: estimate entropy mean/variance for one prompt
+    # ----------------------------
+    def estimate_entropy(self, meaning_clusters: List[dict]) -> Tuple[float, float]:
+        """
+        Returns:
+          (E[h], Var[h]) where h = H(b), b ~ belief over meaning distribution.
+        """
+        clusters = meaning_clusters or []
+        # Build counts (with repeats) and lower bounds (distinct sequences) for observed meanings
+        observed_ids, counts_vec, lower_bounds = self._extract_counts_and_lower_bounds(clusters)
+        if len(observed_ids) == 0:
             return 0.0, 0.0
 
-        # -----------------------------
-        # 1) Build lower bounds and counts per meaning
-        # -----------------------------
-        meaning_prob_mass = {}
-        meaning_seq_counts = {}
+        k_min = len(observed_ids)
 
-        for cluster in meaning_clusters:
-            m_id = int(cluster.get("meaning_id"))
-            probs = cluster.get("probabilities", []) or []
-            probs = np.asarray(probs, dtype=float)
+        # Prior over K
+        if self.k_prior is None:
+            # If no learned prior was provided, default to a weak prior concentrated at k_min.
+            # (Paper uses a learned discrete prior; you should fit it in run_adaptive.py.) 
+            self.k_prior = KPrior({k_min: 1.0})
 
-            if probs.size == 0:
+        cond_prior = self.k_prior.conditioned_on_ge(k_min)
+
+        # For each possible K, compute E[H|K], Var[H|K], then aggregate 
+        e_list = []
+        v_list = []
+        w_list = []
+
+        for K, wK in sorted(cond_prior.probs.items(), key=lambda kv: kv[0]):
+            eK, vK = self._estimate_given_K(
+                K=K,
+                k_observed=k_min,
+                counts_vec=counts_vec,
+                lower_bounds=lower_bounds
+            )
+            e_list.append(eK)
+            v_list.append(vK)
+            w_list.append(wK)
+
+        w = np.asarray(w_list, dtype=float)
+        w = w / max(w.sum(), self.eps)
+        e = np.asarray(e_list, dtype=float)
+        v = np.asarray(v_list, dtype=float)
+
+        # Total expectation/variance (paper Eq. 6).
+        E = float(np.sum(w * e))
+        Var = float(np.sum(w * (v + e * e)) - E * E)
+        if Var < 0 and Var > -1e-12:
+            Var = 0.0
+        return E, Var
+
+    # ----------------------------
+    # Internals
+    # ----------------------------
+    def _extract_counts_and_lower_bounds(
+        self, clusters: List[dict]
+    ) -> Tuple[List[int], np.ndarray, np.ndarray]:
+        """
+        counts_vec: counts per meaning (repeats allowed)
+        lower_bounds: sum of probabilities of DISTINCT sequences per meaning 
+        """
+        observed_ids = []
+        counts = []
+        lbs = []
+
+        for cl in clusters:
+            m_id = int(cl.get("meaning_id"))
+            members = cl.get("members", []) or []
+            probs = cl.get("probabilities", []) or []
+
+            if len(probs) == 0:
                 continue
 
-            # lower bound (sum of per-sequence probabilities for that meaning)
-            meaning_prob_mass[m_id] = float(probs.sum())
-            # count (number of sequences observed for that meaning)
-            meaning_seq_counts[m_id] = int(len(probs))
+            # Counts use all samples (repeats allowed) (paper defines D can repeat)
+            c = int(len(probs))
 
-        if not meaning_prob_mass:
-            return 0.0, 0.0
-
-        unique_meanings = sorted(meaning_prob_mass.keys())
-        K_observed = len(unique_meanings)
-
-        lower_bounds = np.array([meaning_prob_mass[m] for m in unique_meanings], dtype=float)
-        sum_lb = float(lower_bounds.sum())
-
-        # ---- SAFETY: if bounds are not in a probability-mass scale, normalize them ----
-        # This prevents the constraint "observed_candidates >= lower_bounds" from becoming impossible.
-        if sum_lb > self.lb_clip:
-            lower_bounds = lower_bounds / max(sum_lb, self.eps) * self.lb_clip
-            sum_lb = float(lower_bounds.sum())
-
-        # If bounds already consume ~all mass, entropy becomes nearly deterministic.
-        # But we still compute entropy on normalized bounds.
-        if sum_lb >= 1.0 - 1e-6:
-            p = lower_bounds / max(sum_lb, self.eps)
-            return self._shannon_entropy(p), 0.0
-
-        # -----------------------------
-        # 2) Prior over unseen meanings (truncated Poisson)
-        # -----------------------------
-        lam = float(getattr(self, "lambda_unseen", 1.0))
-        max_unseen = int(getattr(self, "max_unseen", 4))
-
-        raw_w = np.array([self._poisson_pmf(u, lam) for u in range(max_unseen + 1)], dtype=float)
-        if float(raw_w.sum()) <= 0:
-            raw_w = np.ones(max_unseen + 1, dtype=float)
-        w_unseen = raw_w / raw_w.sum()
-
-        counts_vec = np.array([meaning_seq_counts[m] for m in unique_meanings], dtype=float)
-
-        means_per_K = []
-        vars_per_K = []
-        used_weights = []
-
-        # -----------------------------
-        # 3) For each K_total, sample Dirichlet, apply bounds, estimate entropy distribution
-        # -----------------------------
-        for num_unseen in range(0, max_unseen + 1):
-            K_total = K_observed + num_unseen
-
-            alpha_vec = np.full(K_total, self.alpha, dtype=float)
-            alpha_vec[:K_observed] += counts_vec  # posterior-ish update by counts
-
-            # Rejection sampling to get enough valid vectors
-            valid_vectors = None
-            total_valid = 0
-
-            for _round in range(self.max_resample_rounds):
+            # Lower bound uses DISTINCT sequences s within D for that meaning (Eq. 4)
+            # If duplicates exist, keep max(prob) for that text (conservative bound).
+            seen = {}
+            for i, p in enumerate(probs):
                 try:
-                    candidates = dirichlet.rvs(alpha_vec, size=self.max_mc_samples)
-                except ValueError:
-                    candidates = None
-
-                if candidates is None or len(candidates) == 0:
+                    p = float(p)
+                except Exception:
                     continue
-
-                obs = candidates[:, :K_observed]
-                valid_mask = np.all(obs >= lower_bounds, axis=1)
-                vv = candidates[valid_mask]
-
-                if valid_vectors is None:
-                    valid_vectors = vv
+                s = members[i] if i < len(members) else ""
+                if s in seen:
+                    seen[s] = max(seen[s], p)
                 else:
-                    if len(vv) > 0:
-                        valid_vectors = np.vstack([valid_vectors, vv])
+                    seen[s] = p
 
-                total_valid = 0 if valid_vectors is None else len(valid_vectors)
-                if total_valid >= self.min_valid:
-                    break
+            lb = float(sum(seen.values()))
 
-            # If still too few valid vectors, FALL BACK (don’t return 0,0)
-            # We relax by ignoring the lower-bound constraint for this K.
-            if valid_vectors is None or len(valid_vectors) < 2:
-                try:
-                    valid_vectors = dirichlet.rvs(alpha_vec, size=self.max_mc_samples)
-                except ValueError:
-                    continue
+            observed_ids.append(m_id)
+            counts.append(c)
+            lbs.append(lb)
 
-            entropies = np.array([self._shannon_entropy(v) for v in valid_vectors], dtype=float)
+        # Stable ordering by meaning_id
+        order = np.argsort(np.asarray(observed_ids, dtype=int))
+        observed_ids = [observed_ids[i] for i in order]
+        counts_vec = np.asarray([counts[i] for i in order], dtype=float)
+        lower_bounds = np.asarray([lbs[i] for i in order], dtype=float)
 
-            means_per_K.append(float(entropies.mean()))
-            vars_per_K.append(float(entropies.var()))
-            used_weights.append(float(w_unseen[num_unseen]))
+        # If lower bounds sum is >= 1 (can happen due to probability bugs / approximations),
+        # rescale gently so truncated simplex is feasible
+        sLB = float(lower_bounds.sum())
+        if sLB >= 1.0 - 1e-10:
+            lower_bounds = lower_bounds / max(sLB, self.eps) * (1.0 - 1e-10)
 
-        if not means_per_K:
+        return observed_ids, counts_vec, lower_bounds
+
+    def _estimate_given_K(
+        self,
+        K: int,
+        k_observed: int,
+        counts_vec: np.ndarray,
+        lower_bounds: np.ndarray
+    ) -> Tuple[float, float]:
+        """
+        Estimate E[H] and Var(H) for a fixed K via truncated Dirichlet SNIS.
+        """
+        K = int(K)
+        k_observed = int(k_observed)
+        if K < k_observed:
             return 0.0, 0.0
 
-        means_per_K = np.asarray(means_per_K, dtype=float)
-        vars_per_K = np.asarray(vars_per_K, dtype=float)
-        used_weights = np.asarray(used_weights, dtype=float)
-        used_weights = used_weights / used_weights.sum()
+        # Dirichlet parameters: alpha + counts for observed, alpha for unseen
+        alpha_vec = np.full(K, self.alpha, dtype=float)
+        alpha_vec[:k_observed] += counts_vec
 
-        # -----------------------------
-        # 4) Hierarchical combine across K (total expectation/variance)
-        # -----------------------------
-        final_entropy = float(np.sum(used_weights * means_per_K))
-        final_variance = float(np.sum(used_weights * (vars_per_K + means_per_K ** 2)) - final_entropy ** 2)
+        # Build full lower-bound vector (observed LBs, unseen zeros)
+        L = np.zeros(K, dtype=float)
+        L[:k_observed] = lower_bounds
+        sL = float(L.sum())
+        if sL >= 1.0 - 1e-10:
+            # Essentially fixed distribution
+            p = L / max(sL, self.eps)
+            H = self._entropy(p)
+            return H, 0.0
 
-        # numeric safety
-        if final_variance < 0 and final_variance > -1e-12:
-            final_variance = 0.0
+        # Sample uniformly from truncated simplex:
+        R = 1.0 - sL
+        rng = np.random.default_rng()
+        u = rng.dirichlet(np.ones(K), size=self.mc_samples)
+        b = L[None, :] + R * u
 
-        return final_entropy, final_variance
+        # SNIS weights proportional to Dirichlet in paper
+        logw = self._dirichlet_logpdf(b, alpha_vec)
+        logw -= np.max(logw)  # stabilize
+        w = np.exp(logw)
+        w_sum = float(np.sum(w)) + self.eps
+        w = w / w_sum
 
+        # Weighted moments of entropy
+        ent = self._entropy_batch(b)
+        Eh = float(np.sum(w * ent))
+        Eh2 = float(np.sum(w * (ent ** 2)))
+        Varh = float(max(0.0, Eh2 - Eh * Eh))
+        return Eh, Varh
 
-    def _poisson_pmf(self, k: int, lam: float) -> float:
-        # exp(-lam) * lam^k / k! in log space
-        return math.exp(-lam + k * math.log(lam + 1e-30) - math.lgamma(k + 1))
+    def _entropy(self, p: np.ndarray) -> float:
+        p = np.asarray(p, dtype=float) + self.eps
+        p = p / max(float(p.sum()), self.eps)
+        return float(-np.sum(p * np.log(p)))
+
+    def _entropy_batch(self, P: np.ndarray) -> np.ndarray:
+        P = np.asarray(P, dtype=float) + self.eps
+        P = P / np.clip(P.sum(axis=1, keepdims=True), self.eps, None)
+        return -np.sum(P * np.log(P), axis=1)
+
+    def _dirichlet_logpdf(self, X: np.ndarray, alpha: np.ndarray) -> np.ndarray:
+        """
+        log Dirichlet pdf for each row of X.
+        """
+        X = np.asarray(X, dtype=float)
+        alpha = np.asarray(alpha, dtype=float)
+
+        # log B(alpha) = sum lgamma(alpha_i) - lgamma(sum alpha_i)
+        logB = np.sum([math.lgamma(float(a)) for a in alpha]) - math.lgamma(float(np.sum(alpha)))
+        return -logB + np.sum((alpha - 1.0) * np.log(np.clip(X, self.eps, None)), axis=1)
