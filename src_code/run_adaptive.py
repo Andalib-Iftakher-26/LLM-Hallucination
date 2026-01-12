@@ -12,12 +12,12 @@ from bayesian_estimator import BayesianSemanticEntropy, KPrior
 # =========================
 # CONFIG
 # =========================
-CLUSTERS_DIRECTORY_COSINE_SIM = r"D:/LLM HALL/LLM-Hallucination/data/meanings/cosine_sim"
-CLUSTERS_DIRECTORY_PEARSON_SIM = r"D:/LLM HALL/LLM-Hallucination/data/meanings/pearson_sim"
-CLUSTERS_DIRECTORY_RBF_SIM = r"D:/LLM HALL/LLM-Hallucination/data/meanings/rbf_sim"
-AUTHOR = r"D:\LLM HALL\LLM-Hallucination\data\Authors"
+CLUSTERS_DIRECTORY_COSINE_SIM = r"D:\T24\LLM-Hallucination\data\meanings\cosine_sim"
+CLUSTERS_DIRECTORY_PEARSON_SIM = r"D:\T24\LLM-Hallucination\data\meanings\pearson_sim"
+CLUSTERS_DIRECTORY_RBF_SIM = r"D:\T24\LLM-Hallucination\data\meanings\rbf_sim"
+AUTHOR = r"D:\T24\LLM-Hallucination\data\Authors"
 
-OUTPUT_DIRECTORY = r"D:/LLM HALL/LLM-Hallucination/result"
+OUTPUT_DIRECTORY = r"D:\T24\LLM-Hallucination\data\result"
 
 # Adaptive stopping rule: stop once Var[h] is below threshold (higher precision).
 VARIANCE_THRESHOLD = 0.005
@@ -205,6 +205,7 @@ def process_file(file_path: str, metric_name: str, k_prior: KPrior) -> Tuple[str
                 "p_false": p_false_i,
                 "is_hallucination": is_hall_i,
             }
+        print("Run completed")
 
     except Exception as e:
         print(f"[{metric_name}] Error processing {file_path}: {e}")
